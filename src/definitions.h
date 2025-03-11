@@ -25,9 +25,11 @@ public:
     std::array<bool, DISPLAY_WIDTH * DISPLAY_HEIGHT> display;
     std::array<uint16_t, STACK_SIZE> stack;
 
-    void readFile(const std::string filename, std::array<uint8_t, Chip8::MEMORY_SIZE>& ram);
+    void read_file(const std::string filename, std::array<uint8_t, Chip8::MEMORY_SIZE>& ram);
     void exec(uint16_t op);
-    uint8_t wrapping_add(uint8_t a, uint8_t b);
+    std::pair<uint8_t, bool> wrapping_add(uint8_t a, uint8_t b);
+    void push(uint16_t val);
+    uint16_t pop();
 
     std::vector<uint8_t> rom;
     std::array<uint8_t, 4096> ram{};
@@ -38,10 +40,26 @@ public:
     void opcode_6XNN(uint16_t& op);
     void opcode_7XNN(uint16_t& op);
     void opcode_ANNN(uint16_t& op);
+    void opcode_3XNN(uint16_t& op);
+    void opcode_4XNN(uint16_t& op);
+    void opcode_5XY0(uint16_t& op);
+    void opcode_9XY0(uint16_t& op);
+    void opcode_00EE();
+    void opcode_2NNN(uint16_t& op);
     void opcode_8XY0(uint16_t& op);
     void opcode_8XY1(uint16_t& op);
     void opcode_8XY2(uint16_t& op);
+    void opcode_8XY3(uint16_t& op);
+    void opcode_8XY4(uint16_t& op);
+    void opcode_8XY5(uint16_t& op);
+    void opcode_8XY6(uint16_t& op);
+    void opcode_8XY7(uint16_t& op);
+    void opcode_8XYE(uint16_t& op);
     void opcode_DXYN(uint16_t& op);
+    void opcode_FX1E(uint16_t& op);
+    void opcode_FX33(uint16_t& op);
+    void opcode_FX55(uint16_t& op);
+    void opcode_FX65(uint16_t& op);
 
 };
 
