@@ -3,10 +3,19 @@
 #include <array>
 #include <string>
 #include <iomanip>
+#include <chrono>
+#include <thread>
+#include <atomic>
 
 #include "definitions.h"
 #include "gui.h"
+#include "sound.h"
 
+#include "../include/tinyfiledialogs.h"
+
+std::atomic<bool> running(true);
+
+// chip8 functions
 void read_file(const std::string filename, std::array<uint8_t, Chip8::MEMORY_SIZE>& ram) {
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
     if (!file) {
@@ -33,19 +42,51 @@ uint16_t fetch(std::array<uint8_t, Chip8::MEMORY_SIZE>& ram, uint16_t& pc) {
     return op;
 }
 
-void print_v_regs(const std::array<uint8_t, 16>& v_regs) {
-    for (int i = 0; i < 16; ++i) {
-        std::cout << "V" << i << ": 0x"
-                  << std::setw(2) << std::setfill('0') << std::hex << (int)v_regs[i];
-        if (i < 15) {
-            std::cout << ", ";
-        }
-    }
-    std::cout << std::endl;
+void cycle(std::array<uint8_t, Chip8::MEMORY_SIZE>& ram, uint16_t& pc, Chip8& chip8) {
+    uint16_t op = fetch(ram, pc);
+    chip8.exec(op);
 }
 
-int main() {
+
+void timerLoop(Chip8& chip8, Sound &sound) {
+    using namespace std::chrono;
+    auto nextCycle = high_resolution_clock::now();
+    while (running) {
+        nextCycle += milliseconds(16);
+
+        if (chip8.dt > 0) chip8.dt--;
+        if (chip8.st > 0) {
+            chip8.st--;
+            sound.play(chip8.st > 0);
+        }
+
+        std::this_thread::sleep_until(nextCycle);
+    }
+}
+
+
+int main(int argc, char** argv) {
+
+    std::string filename;
+
+    if (argc < 2) {
+        const char* filters[] = {"*.ch8", "*.rom"};
+        filename = tinyfd_openFileDialog("Select CHIP-8 ROM", "", 2, filters, "CHIP-8 ROM Files", 0);
+
+        if (!filename.empty()) {
+            std::cout << "Selected file: " << filename << std::endl;
+        } else {
+            std::cerr << "No file selected. Exiting.\n";
+            return 1;
+        }
+    } else {
+        filename = argv[1];
+    }
+
     Chip8 chip8;
+    Sound sound;
+
+    std::thread timerThread(timerLoop, std::ref(chip8), std::ref(sound));
 
     for (size_t i = 0; i < chip8.v_reg.size(); i++) {
         chip8.v_reg[i] = 0x0;
@@ -54,39 +95,49 @@ int main() {
     if (!initSDL()) {
         return 1;
     }
+    read_file(filename, chip8.ram);
 
-    std::cout << "DEBUG: Program Counter: 0x" << std::hex << chip8.pc <<std::endl;
-    read_file("test.ch8", chip8.ram);
+    chip8.loadFonts(chip8, chip8.ram);
 
-    std::cout << "DEBUG: RAM at 0x200: ";
     for (size_t i = 0; i < chip8.ram.size(); i++) {
         if (i == 0x200) {
             printf("\n0x200: %02X ", chip8.ram[i]);
         } else {
             printf("%02X ", chip8.ram[i]);
         }
-
     }
     std::cout << std::endl;
 
-    bool running = true;
-    while (running) {
-        uint16_t op = fetch(chip8.ram, chip8.pc);
-        chip8.exec(op);
-        std::cout << "DEBUG: Current opcode " << std::hex << std::setw(4) << std::setfill('0') << op << std::endl;
-        std::cout << "DEBUG: PC: " << std::hex << chip8.pc << std::endl;
-        print_v_regs(chip8.v_reg);
+    // clear screen cause some roms dont do that for some reason
+    chip8.opcode_00E0();
 
-        updateDisplay(chip8);
-        handleInput(running);
+    while (running.load()) {
+        auto frameStart = std::chrono::high_resolution_clock::now();
+
+        handleInput(running, chip8);
+
+        if (!running) break;
+        if (!paused) {
+            for (int i = 0; i < Chip8::INSTRUCTIONS_PER_FRAME; i++) {
+                cycle(chip8.ram, chip8.pc, chip8);
+            }
+        }
+        if (chip8.displayChanged) {
+            render(chip8);
+            chip8.displayChanged = false;
+        }
+        if (chip8.debugUpdateCounter % 30 == 0) {
+            renderDebugInfo(chip8);
+        }
+        chip8.debugUpdateCounter++;
+        renderDebugWindow();
+        auto frameTime = std::chrono::high_resolution_clock::now() - frameStart;
+        auto remainingTime = std::chrono::milliseconds(Chip8::FRAME_DURATION_MS) - frameTime;
+        if (remainingTime.count() > 0) {
+            std::this_thread::sleep_for(remainingTime);
+        }
     }
     cleanupSDL();
-    /*while (chip8.pc <= 0xFFF) {
-        uint16_t op = fetch(chip8.ram, chip8.pc);
-        std::cout << "DEBUG: Current opcode " << std::hex << std::setw(4) << std::setfill('0') << op << std::endl;
-        std::cout << "DEBUG: PC: " << std::hex << chip8.pc << std::endl;
-    }*/
-
 
     return 0;
 }
